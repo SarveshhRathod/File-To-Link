@@ -3,10 +3,22 @@ import os
 import sys
 import glob
 import asyncio
+
+# --- Python 3.12+ compatibility fix for Pyrogram's import-time event loop check ---
+try:
+    loop = asyncio.get_event_loop()
+except RuntimeError:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+# Monkeypatch asyncio.get_event_loop to return our loop before importing pyrogram
+asyncio.get_event_loop = lambda: loop
+# ----------------------------------------------------------------------------------
+
 import logging
 import importlib
 from pathlib import Path
-from pyrogram import idle
+from pyrogram import idle  # Now this won't crash
 from .bot import StreamBot
 from .vars import Var
 from aiohttp import web
@@ -27,17 +39,9 @@ logging.getLogger("aiohttp.web").setLevel(logging.ERROR)
 ppath = "Adarsh/bot/plugins/*.py"
 files = glob.glob(ppath)
 
-# Event Loop setup compatible with Python 3.8+
-try:
-    loop = asyncio.get_event_loop()
-except RuntimeError:
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
 async def start_services():
     print('\n')
     print('------------------- Starting Telegram Bot -------------------')
-    # Starting bot inside async loop to avoid event loop issues
     await StreamBot.start()
     
     bot_info = await StreamBot.get_me()
@@ -62,7 +66,6 @@ async def start_services():
             sys.modules["Adarsh.bot.plugins." + plugin_name] = load
             print("Imported => " + plugin_name)
             
-    # Keep alive for both Heroku and Render to avoid idling
     if Var.ON_HEROKU or Var.ON_RENDER:
         print("------------------ Starting Keep Alive Service ------------------")
         print()
@@ -72,7 +75,6 @@ async def start_services():
     app = web.AppRunner(await web_server())
     await app.setup()
     
-    # Render and Heroku bind to 0.0.0.0
     bind_address = "0.0.0.0" if (Var.ON_HEROKU or Var.ON_RENDER) else Var.BIND_ADRESS
     await web.TCPSite(app, bind_address, Var.PORT).start()
     
